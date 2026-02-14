@@ -19,12 +19,11 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 MSYS2（修正线程库依赖）
+      - name: 设置 MSYS2
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
-          # 修正包名：mingw-w64-x86_64-winpthreads 已包含所需全部文件
           install: >-
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-make
@@ -61,6 +60,7 @@ jobs:
             --disable-txtpages \
             --disable-htmlpages \
             --enable-pthreads \
+            --extra-libs="-lwinpthread" \
             --disable-everything \
             --enable-avcodec \
             --enable-avformat \
