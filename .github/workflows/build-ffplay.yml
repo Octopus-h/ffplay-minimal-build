@@ -39,8 +39,10 @@ jobs:
       - name: 替换 MSYS2 镜像源为清华镜像
         shell: msys2 {0}
         run: |
-          sed -i 's|https://mirror.msys2.org|https://mirrors.tuna.tsinghua.edu.cn/msys2|g' /etc/pacman.d/mingw64.list
-          sed -i 's|https://mirror.msys2.org|https://mirrors.tuna.tsinghua.edu.cn/msys2|g' /etc/pacman.d/msys.list
+          # 修正：使用正确的镜像列表文件名
+          sed -i 's|https://mirror.msys2.org|https://mirrors.tuna.tsinghua.edu.cn/msys2|g' /etc/pacman.d/mirrorlist.mingw64
+          sed -i 's|https://mirror.msys2.org|https://mirrors.tuna.tsinghua.edu.cn/msys2|g' /etc/pacman.d/mirrorlist.msys
+          # 更新包数据库
           pacman -Syu --noconfirm
 
       - name: 下载 FFmpeg 源码
