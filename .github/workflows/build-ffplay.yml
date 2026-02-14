@@ -19,11 +19,11 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 MSYS2（补全nasm依赖+国内镜像加速）
+      - name: 设置 MSYS2（补全nasm依赖）
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          update: true
+          update: true  # 自动更新MSYS2包数据库
           # 安装编译所需的依赖：gcc编译器、make构建工具、yasm/nasm汇编器、SDL2图形库等
           install: >-
             mingw-w64-x86_64-gcc
@@ -35,15 +35,6 @@ jobs:
             git
             base-devel
             mingw-w64-x86_64-binutils
-
-      - name: 替换 MSYS2 镜像源为清华镜像
-        shell: msys2 {0}
-        run: |
-          # 修正：使用正确的镜像列表文件名
-          sed -i 's|https://mirror.msys2.org|https://mirrors.tuna.tsinghua.edu.cn/msys2|g' /etc/pacman.d/mirrorlist.mingw64
-          sed -i 's|https://mirror.msys2.org|https://mirrors.tuna.tsinghua.edu.cn/msys2|g' /etc/pacman.d/mirrorlist.msys
-          # 更新包数据库
-          pacman -Syu --noconfirm
 
       - name: 下载 FFmpeg 源码
         shell: msys2 {0}
