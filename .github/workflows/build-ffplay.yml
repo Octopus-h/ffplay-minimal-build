@@ -19,12 +19,12 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 MSYS2（补全nasm依赖）
+      - name: 设置 MSYS2（补全pthreads等依赖）
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          update: true  # 自动更新MSYS2包数据库
-          # 安装编译所需的依赖：gcc编译器、make构建工具、yasm/nasm汇编器、SDL2图形库等
+          update: true
+          # 新增 mingw-w64-x86_64-pthreads 解决多线程依赖问题
           install: >-
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-make
@@ -32,6 +32,7 @@ jobs:
             mingw-w64-x86_64-nasm
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-pthreads
             git
             base-devel
             mingw-w64-x86_64-binutils
