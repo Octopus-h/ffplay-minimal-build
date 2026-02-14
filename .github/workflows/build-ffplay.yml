@@ -50,13 +50,15 @@ jobs:
           echo "=== Checking pthread libraries ==="
           ls -l /mingw64/lib/libpthread* /mingw64/lib/libwinpthread* || echo "pthread libs not found!"
 
-      - name: 配置编译选项（纯 LGPL，仅视频解码 + 循环播放）
+      - name: 配置编译选项
         id: configure
         shell: msys2 {0}
-        continue-on-error: true  # 允许配置失败，以便后续上传日志
+        continue-on-error: true
         run: |
           cd ffmpeg
           export PKG_CONFIG_PATH=/mingw64/lib/pkgconfig
+          # 将 Windows 路径转换为 MSYS2 路径
+          prefix=$(cygpath -u "${{ github.workspace }}/ffplay-output")
           ./configure \
             --disable-gpl \
             --enable-small \
@@ -83,7 +85,7 @@ jobs:
             --enable-decoder=aac,mp3,ac3,eac3 \
             --enable-sdl2 \
             --disable-symver \
-            --prefix=${{ github.workspace }}/ffplay-output
+            --prefix="$prefix"
 
       - name: 上传配置日志（如果配置失败）
         if: steps.configure.outcome == 'failure'
@@ -104,10 +106,25 @@ jobs:
           make -j2 ffplay.exe
           make install
 
+      - name: 验证安装结果
+        shell: msys2 {0}
+        run: |
+          bin_dir=$(cygpath -u "${{ github.workspace }}/ffplay-output/bin")
+          if [ ! -d "$bin_dir" ]; then
+            echo "❌ 错误：安装目录 $bin_dir 不存在！"
+            echo "当前安装前缀内容："
+            prefix_dir=$(cygpath -u "${{ github.workspace }}/ffplay-output")
+            ls -la "$prefix_dir" || echo "安装前缀目录不存在"
+            exit 1
+          else
+            echo "✅ 安装目录存在，内容如下："
+            ls -la "$bin_dir"
+          fi
+
       - name: 收集依赖 DLL + 减小体积
         shell: msys2 {0}
         run: |
-          cd $GITHUB_WORKSPACE/ffplay-output/bin
+          cd $(cygpath -u "${{ github.workspace }}/ffplay-output/bin")
           strip ffplay.exe
           ldd ffplay.exe | grep -E "(/mingw64/bin/.*\.dll)" | awk '{print $3}' | xargs -I {} cp {} .
           ls -lh ffplay.exe
