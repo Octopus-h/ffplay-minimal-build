@@ -24,11 +24,12 @@ jobs:
         with:
           msystem: MINGW64
           update: true
+          # 安装编译所需的依赖：gcc编译器、make构建工具、yasm/nasm汇编器、SDL2图形库等
           install: >-
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-make
             mingw-w64-x86_64-yasm
-            mingw-w64-x86_64-nasm  # 新增：安装nasm，解决汇编依赖问题
+            mingw-w64-x86_64-nasm
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-SDL2
             git
