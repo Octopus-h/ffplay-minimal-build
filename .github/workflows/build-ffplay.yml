@@ -19,7 +19,7 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 MSYS2
+      - name: 设置 MSYS2（补全nasm依赖+国内镜像加速）
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -28,11 +28,19 @@ jobs:
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-make
             mingw-w64-x86_64-yasm
+            mingw-w64-x86_64-nasm  # 新增：安装nasm，解决汇编依赖问题
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-SDL2
             git
             base-devel
             mingw-w64-x86_64-binutils
+
+      - name: 替换 MSYS2 镜像源为清华镜像
+        shell: msys2 {0}
+        run: |
+          sed -i 's|https://mirror.msys2.org|https://mirrors.tuna.tsinghua.edu.cn/msys2|g' /etc/pacman.d/mingw64.list
+          sed -i 's|https://mirror.msys2.org|https://mirrors.tuna.tsinghua.edu.cn/msys2|g' /etc/pacman.d/msys.list
+          pacman -Syu --noconfirm
 
       - name: 下载 FFmpeg 源码
         shell: msys2 {0}
@@ -44,6 +52,7 @@ jobs:
         shell: msys2 {0}
         run: |
           cd ffmpeg
+          export PKG_CONFIG_PATH=/mingw64/lib/pkgconfig
           ./configure \
             --disable-gpl \
             --enable-small \
@@ -72,17 +81,17 @@ jobs:
             --prefix=${{ github.workspace }}/ffplay-output
 
       - name: 编译 ffplay
-        id: compile_step  # 给步骤加ID，用于后续获取编译时间
+        id: compile_step
         shell: msys2 {0}
         run: |
           cd ffmpeg
-          make -j$(nproc) ffplay.exe
+          make -j2 ffplay.exe
           make install
 
       - name: 收集依赖 DLL + 减小体积
         shell: msys2 {0}
         run: |
-          cd ${{ github.workspace }}/ffplay-output/bin
+          cd $GITHUB_WORKSPACE/ffplay-output/bin
           strip ffplay.exe
           ldd ffplay.exe | grep -E "(/mingw64/bin/.*\.dll)" | awk '{print $3}' | xargs -I {} cp {} .
           ls -lh ffplay.exe
@@ -107,7 +116,6 @@ jobs:
           name: Release ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', github.run_number) }}
           body: |
             自动构建的 ffplay 精简版 (LGPL)
-            # 直接使用编译步骤的开始时间，完全避免环境变量问题
             - 编译时间：${{ steps.compile_step.start_time }}
             - 包含功能：视频解码 (H.264/HEVC/VP8/VP9/MPEG-4) + 音频解码 (AAC/MP3/AC3) + 循环播放支持
             - 许可证：LGPL（完全禁用 GPL 代码）
