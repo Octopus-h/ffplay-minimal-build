@@ -1,0 +1,118 @@
+name: Build ffplay (LGPL 精简版) 并发布 Release
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release 标签 (例如 v1.0.0)，留空则自动生成基于时间的标签'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-yasm
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-SDL2
+            git
+            base-devel
+            mingw-w64-x86_64-binutils
+
+      - name: 下载 FFmpeg 源码
+        shell: msys2 {0}
+        run: |
+          git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git ffmpeg
+          cd ffmpeg
+
+      - name: 配置编译选项（纯 LGPL，仅视频解码 + 循环播放）
+        shell: msys2 {0}
+        run: |
+          cd ffmpeg
+          ./configure \
+            --disable-gpl \
+            --enable-small \
+            --disable-programs \
+            --enable-ffplay \
+            --disable-ffmpeg \
+            --disable-ffprobe \
+            --disable-doc \
+            --disable-podpages \
+            --disable-manpages \
+            --disable-txtpages \
+            --disable-htmlpages \
+            --enable-pthreads \
+            --disable-everything \
+            --enable-avcodec \
+            --enable-avformat \
+            --enable-avutil \
+            --enable-swscale \
+            --enable-swresample \
+            --enable-protocol=file \
+            --enable-demuxer=mov,mp4,mkv,flv,avi \
+            --enable-decoder=h264,hevc,mpeg4,vp8,vp9 \
+            --enable-decoder=aac,mp3,ac3,eac3 \
+            --enable-sdl2 \
+            --disable-symver \
+            --prefix=${{ github.workspace }}/ffplay-output
+
+      - name: 编译 ffplay
+        id: compile_step  # 给步骤加ID，用于后续获取编译时间
+        shell: msys2 {0}
+        run: |
+          cd ffmpeg
+          make -j$(nproc) ffplay.exe
+          make install
+
+      - name: 收集依赖 DLL + 减小体积
+        shell: msys2 {0}
+        run: |
+          cd ${{ github.workspace }}/ffplay-output/bin
+          strip ffplay.exe
+          ldd ffplay.exe | grep -E "(/mingw64/bin/.*\.dll)" | awk '{print $3}' | xargs -I {} cp {} .
+          ls -lh ffplay.exe
+
+      - name: 打包产物为ZIP
+        shell: pwsh
+        run: |
+          cd ${{ github.workspace }}/ffplay-output/bin
+          Compress-Archive -Path .\* -DestinationPath ..\ffplay-lgpl-minimal-windows.zip
+
+      - name: 上传编译产物 (Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffplay-lgpl-minimal
+          path: ${{ github.workspace }}/ffplay-output/ffplay-lgpl-minimal-windows.zip
+
+      - name: 创建 Release 并上传附件
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', github.run_number) }}
+          name: Release ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', github.run_number) }}
+          body: |
+            自动构建的 ffplay 精简版 (LGPL)
+            # 直接使用编译步骤的开始时间，完全避免环境变量问题
+            - 编译时间：${{ steps.compile_step.start_time }}
+            - 包含功能：视频解码 (H.264/HEVC/VP8/VP9/MPEG-4) + 音频解码 (AAC/MP3/AC3) + 循环播放支持
+            - 许可证：LGPL（完全禁用 GPL 代码）
+            - 体积：约 5-8 MB（包含所有依赖DLL）
+            - 使用说明：解压后直接运行 ffplay.exe，无需额外安装
+          files: ${{ github.workspace }}/ffplay-output/ffplay-lgpl-minimal-windows.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
