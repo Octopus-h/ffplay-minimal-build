@@ -24,7 +24,7 @@ jobs:
         with:
           msystem: MINGW64
           update: true
-          # 替换错误的pthreads包为正确的winpthreads开发包
+          # 修正包名：mingw-w64-x86_64-winpthreads 已包含所需全部文件
           install: >-
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-make
@@ -32,7 +32,7 @@ jobs:
             mingw-w64-x86_64-nasm
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-SDL2
-            mingw-w64-x86_64-winpthreads-devel
+            mingw-w64-x86_64-winpthreads
             git
             base-devel
             mingw-w64-x86_64-binutils
@@ -60,7 +60,7 @@ jobs:
             --disable-manpages \
             --disable-txtpages \
             --disable-htmlpages \
-            --enable-pthreads \  # 保留这个选项，winpthreads会兼容pthreads接口
+            --enable-pthreads \
             --disable-everything \
             --enable-avcodec \
             --enable-avformat \
@@ -111,7 +111,6 @@ jobs:
           name: Release ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', github.run_number) }}
           body: |
             自动构建的 ffplay 精简版 (LGPL)
-            - 编译时间：${{ steps.compile_step.start_time }}
             - 包含功能：视频解码 (H.264/HEVC/VP8/VP9/MPEG-4) + 音频解码 (AAC/MP3/AC3) + 循环播放支持
             - 许可证：LGPL（完全禁用 GPL 代码）
             - 体积：约 5-8 MB（包含所有依赖DLL）
