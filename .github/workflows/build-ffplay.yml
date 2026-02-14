@@ -19,12 +19,12 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 MSYS2（补全pthreads等依赖）
+      - name: 设置 MSYS2（修正线程库依赖）
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
-          # 新增 mingw-w64-x86_64-pthreads 解决多线程依赖问题
+          # 替换错误的pthreads包为正确的winpthreads开发包
           install: >-
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-make
@@ -32,7 +32,7 @@ jobs:
             mingw-w64-x86_64-nasm
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-SDL2
-            mingw-w64-x86_64-pthreads
+            mingw-w64-x86_64-winpthreads-devel
             git
             base-devel
             mingw-w64-x86_64-binutils
@@ -60,7 +60,7 @@ jobs:
             --disable-manpages \
             --disable-txtpages \
             --disable-htmlpages \
-            --enable-pthreads \
+            --enable-pthreads \  # 保留这个选项，winpthreads会兼容pthreads接口
             --disable-everything \
             --enable-avcodec \
             --enable-avformat \
