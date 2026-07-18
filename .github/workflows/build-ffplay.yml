@@ -45,7 +45,7 @@ jobs:
 
     steps:
       - name: 检出 FFmpeg 源码 (稳定版标签)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: 'FFmpeg/FFmpeg'
           ref: ${{ env.FFMPEG_TAG }}
@@ -114,7 +114,7 @@ jobs:
 
       - name: 上传配置日志（如果配置失败）
         if: steps.configure.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ffmpeg-config-log
           path: ffmpeg/ffbuild/config.log
@@ -161,7 +161,7 @@ jobs:
           Compress-Archive -Path .\* -DestinationPath ..\ffplay-lgpl-minimal-windows.zip
 
       - name: 上传编译产物 (Artifact)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ffplay-lgpl-minimal
           path: ${{ github.workspace }}/ffplay-output/ffplay-lgpl-minimal-windows.zip
