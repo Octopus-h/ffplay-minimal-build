@@ -111,11 +111,14 @@ jobs:
       - name: 生成版本信息 version.txt
         shell: msys2 {0}
         run: |
-          cd ffmpeg
-          FFMPEG_VER=$(grep '^FFMPEG_VERSION=' ffbuild/config.mak | cut -d'=' -f2-)
+          cd ffmpeg || true
+          FFMPEG_VER=$(grep '^FFMPEG_VERSION=' ffbuild/config.mak 2>/dev/null | cut -d'=' -f2-)
           [ -z "$FFMPEG_VER" ] && FFMPEG_VER="unknown"
           BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          OUT_DIR=$(cygpath -u "${{ github.workspace }}/ffplay-output/bin")
+          OUT_DIR=$(cygpath -u "$GITHUB_WORKSPACE")/ffplay-output/bin
+          mkdir -p "$OUT_DIR"
+          echo "OUT_DIR = $OUT_DIR"
+          ls -ld "$OUT_DIR"
 
           printf '%s\n' \
             "ffplay 精简版 (LGPL) - UCRT64" \
