@@ -24,7 +24,7 @@ jobs:
       - name: 设置 MSYS2 (UCRT64 环境)
         uses: msys2/setup-msys2@v2
         with:
-          msystem: UCRT64          # 从 MINGW64 迁移到 UCRT64
+          msystem: UCRT64
           update: true
           install: >-
             mingw-w64-ucrt-x86_64-gcc
@@ -33,10 +33,9 @@ jobs:
             mingw-w64-ucrt-x86_64-pkg-config
             mingw-w64-ucrt-x86_64-SDL2
             mingw-w64-ucrt-x86_64-winpthreads
-            git
+            mingw-w64-ucrt-x86_64-git        # 修正：替换通用 git
             base-devel
             mingw-w64-ucrt-x86_64-binutils
-          # 已移除 yasm，nasm 足以完成 FFmpeg 的汇编检测
 
       - name: 下载 FFmpeg 源码
         shell: msys2 {0}
@@ -49,6 +48,7 @@ jobs:
         shell: msys2 {0}
         continue-on-error: true
         run: |
+          export MSYSTEM=UCRT64                     # 确保激活 UCRT64 工具链
           cd ffmpeg
           export PKG_CONFIG_PATH=/ucrt64/lib/pkgconfig
           prefix=$(cygpath -u "${{ github.workspace }}/ffplay-output")
@@ -104,7 +104,6 @@ jobs:
         run: |
           cd $(cygpath -u "${{ github.workspace }}/ffplay-output/bin")
           strip ffplay.exe
-          # UCRT64 环境下 DLL 位于 /ucrt64/bin
           ldd ffplay.exe | grep -E "(/ucrt64/bin/.*\.dll)" | awk '{print $3}' | xargs -I {} cp {} .
           ls -lh ffplay.exe
 
