@@ -10,46 +10,16 @@ on:
         description: 'Release 标签 (例如 v1.0.0)，留空则自动生成基于时间的标签'
         required: false
         default: ''
-  # 添加定时触发，例如每周一上午9点检查并构建最新稳定版
-  schedule:
-    - cron: '0 9 * * 1'
 
 jobs:
-  # 新增一个job：用于获取最新的稳定版标签
-  get-version:
-    runs-on: ubuntu-latest
-    outputs:
-      ffmpeg_version: ${{ steps.get-version.outputs.ffmpeg_version }}
-      ffmpeg_tag: ${{ steps.get-version.outputs.ffmpeg_tag }}
-    steps:
-      - name: 获取 FFmpeg 最新稳定版本
-        id: get-version
-        run: |
-          # 从 endoflife.date 获取最新版本信息
-          RESPONSE=$(curl -s https://endoflife.date/api/ffmpeg.json)
-          # 解析出最新的稳定版本号
-          VERSION=$(echo "$RESPONSE" | jq -r '.[0].latest')
-          # 构造 FFmpeg 的 Git 标签名
-          TAG="n$VERSION"
-          echo "ffmpeg_version=$VERSION" >> $GITHUB_OUTPUT
-          echo "ffmpeg_tag=$TAG" >> $GITHUB_OUTPUT
-          echo "最新稳定版本: $VERSION, 对应标签: $TAG"
-
   build:
-    needs: get-version  # 等待 get-version job 完成
     runs-on: windows-latest
-    # 从 get-version job 获取版本信息
-    env:
-      FFMPEG_VERSION: ${{ needs.get-version.outputs.ffmpeg_version }}
-      FFMPEG_TAG: ${{ needs.get-version.outputs.ffmpeg_tag }}
+    permissions:
+      contents: write
 
     steps:
-      - name: 检出 FFmpeg 源码 (稳定版标签)
-        uses: actions/checkout@v6
-        with:
-          repository: 'FFmpeg/FFmpeg'
-          ref: ${{ env.FFMPEG_TAG }}
-          path: ffmpeg
+      - name: 检出代码
+        uses: actions/checkout@v4
 
       - name: 设置 MSYS2
         uses: msys2/setup-msys2@v2
@@ -68,13 +38,11 @@ jobs:
             base-devel
             mingw-w64-x86_64-binutils
 
-      - name: 调试：检查 pthread 头文件和库
+      - name: 下载 FFmpeg 源码
         shell: msys2 {0}
         run: |
-          echo "=== Checking pthread.h ==="
-          ls -l /mingw64/include/pthread.h || echo "pthread.h not found!"
-          echo "=== Checking pthread libraries ==="
-          ls -l /mingw64/lib/libpthread* /mingw64/lib/libwinpthread* || echo "pthread libs not found!"
+          git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git ffmpeg
+          cd ffmpeg
 
       - name: 配置编译选项
         id: configure
@@ -114,7 +82,7 @@ jobs:
 
       - name: 上传配置日志（如果配置失败）
         if: steps.configure.outcome == 'failure'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-config-log
           path: ffmpeg/ffbuild/config.log
@@ -131,21 +99,6 @@ jobs:
           make -j2 ffplay.exe
           make install
 
-      - name: 验证安装结果
-        shell: msys2 {0}
-        run: |
-          bin_dir=$(cygpath -u "${{ github.workspace }}/ffplay-output/bin")
-          if [ ! -d "$bin_dir" ]; then
-            echo "❌ 错误：安装目录 $bin_dir 不存在！"
-            echo "当前安装前缀内容："
-            prefix_dir=$(cygpath -u "${{ github.workspace }}/ffplay-output")
-            ls -la "$prefix_dir" || echo "安装前缀目录不存在"
-            exit 1
-          else
-            echo "✅ 安装目录存在，内容如下："
-            ls -la "$bin_dir"
-          fi
-
       - name: 收集依赖 DLL + 减小体积
         shell: msys2 {0}
         run: |
@@ -154,6 +107,36 @@ jobs:
           ldd ffplay.exe | grep -E "(/mingw64/bin/.*\.dll)" | awk '{print $3}' | xargs -I {} cp {} .
           ls -lh ffplay.exe
 
+      - name: 生成版本信息 version.txt
+        shell: msys2 {0}
+        run: |
+          cd ffmpeg
+          FFMPEG_VER=$(grep '^FFMPEG_VERSION=' ffbuild/config.mak | cut -d'=' -f2-)
+          [ -z "$FFMPEG_VER" ] && FFMPEG_VER="unknown"
+          BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          OUT_DIR=$(cygpath -u "${{ github.workspace }}/ffplay-output/bin")
+
+          printf '%s\n' \
+            "ffplay 精简版 (LGPL)" \
+            "========================================" \
+            "FFmpeg 版本 : ${FFMPEG_VER}" \
+            "构建时间    : ${BUILD_DATE}" \
+            "构建来源    : GitHub Actions" \
+            "Commit SHA  : ${{ github.sha }}" \
+            "工作流运行  : ${{ github.run_id }} / 第 ${{ github.run_number }} 次" \
+            "========================================" \
+            "包含功能:" \
+            "  - 视频解码 : H.264, HEVC, VP8, VP9, MPEG-4" \
+            "  - 音频解码 : AAC, MP3, AC3, EAC3" \
+            "  - 容器格式 : MOV, MP4, MKV, FLV, AVI" \
+            "  - 额外特性 : 循环播放支持" \
+            "许可证      : LGPL（已禁用 GPL 代码）" \
+            "========================================" \
+            > "$OUT_DIR/version.txt"
+
+          echo "===== version.txt 内容 ====="
+          cat "$OUT_DIR/version.txt"
+
       - name: 打包产物为ZIP
         shell: pwsh
         run: |
@@ -161,24 +144,24 @@ jobs:
           Compress-Archive -Path .\* -DestinationPath ..\ffplay-lgpl-minimal-windows.zip
 
       - name: 上传编译产物 (Artifact)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: ffplay-lgpl-minimal
           path: ${{ github.workspace }}/ffplay-output/ffplay-lgpl-minimal-windows.zip
 
       - name: 创建 Release 并上传附件
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'schedule'
-        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', github.run_number) }}
-          name: "FFmpeg ${{ env.FFMPEG_VERSION }} 精简版 Build ${{ github.run_number }}"
+          name: Release ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', github.run_number) }}
           body: |
             自动构建的 ffplay 精简版 (LGPL)
-            - **基于 FFmpeg 稳定版**: ${{ env.FFMPEG_VERSION }}
-            - 包含功能：视频解码 (H.264/HEVC/VP8/VP9/MPEG-4) + 音频解码 (AAC/MP3/AC3)
+            - 包含功能：视频解码 (H.264/HEVC/VP8/VP9/MPEG-4) + 音频解码 (AAC/MP3/AC3) + 循环播放支持
             - 许可证：LGPL（完全禁用 GPL 代码）
             - 体积：约 5-8 MB（包含所有依赖DLL）
-            - 使用说明：解压后直接运行 ffplay.exe
+            - 使用说明：解压后直接运行 ffplay.exe，无需额外安装
+            - 详细版本信息见压缩包内的 version.txt
           files: ${{ github.workspace }}/ffplay-output/ffplay-lgpl-minimal-windows.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
