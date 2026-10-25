@@ -26,6 +26,8 @@ jobs:
         with:
           msystem: UCRT64
           update: true
+          # 说明：yasm 在 UCRT64 仓库中已移除，nasm 足以完成 FFmpeg 汇编检测；
+          # git 使用 UCRT64 专用包，避免通用 git 在 UCRT64 下 clone 失败。
           install: >-
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-make
@@ -33,7 +35,7 @@ jobs:
             mingw-w64-ucrt-x86_64-pkg-config
             mingw-w64-ucrt-x86_64-SDL2
             mingw-w64-ucrt-x86_64-winpthreads
-            mingw-w64-ucrt-x86_64-git        # 修正：替换通用 git
+            mingw-w64-ucrt-x86_64-git
             base-devel
             mingw-w64-ucrt-x86_64-binutils
 
@@ -48,7 +50,6 @@ jobs:
         shell: msys2 {0}
         continue-on-error: true
         run: |
-          export MSYSTEM=UCRT64                     # 确保激活 UCRT64 工具链
           cd ffmpeg
           export PKG_CONFIG_PATH=/ucrt64/lib/pkgconfig
           prefix=$(cygpath -u "${{ github.workspace }}/ffplay-output")
