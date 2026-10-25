@@ -21,22 +21,22 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 MSYS2
+      - name: 设置 MSYS2 (UCRT64 环境)
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64          # 从 MINGW64 迁移到 UCRT64
           update: true
           install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-make
-            mingw-w64-x86_64-yasm
-            mingw-w64-x86_64-nasm
-            mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-SDL2
-            mingw-w64-x86_64-winpthreads
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-make
+            mingw-w64-ucrt-x86_64-nasm
+            mingw-w64-ucrt-x86_64-pkg-config
+            mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-winpthreads
             git
             base-devel
-            mingw-w64-x86_64-binutils
+            mingw-w64-ucrt-x86_64-binutils
+          # 已移除 yasm，nasm 足以完成 FFmpeg 的汇编检测
 
       - name: 下载 FFmpeg 源码
         shell: msys2 {0}
@@ -44,13 +44,13 @@ jobs:
           git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git ffmpeg
           cd ffmpeg
 
-      - name: 配置编译选项
+      - name: 配置编译选项 (UCRT64 路径)
         id: configure
         shell: msys2 {0}
         continue-on-error: true
         run: |
           cd ffmpeg
-          export PKG_CONFIG_PATH=/mingw64/lib/pkgconfig
+          export PKG_CONFIG_PATH=/ucrt64/lib/pkgconfig
           prefix=$(cygpath -u "${{ github.workspace }}/ffplay-output")
           ./configure \
             --disable-gpl \
@@ -64,8 +64,8 @@ jobs:
             --disable-manpages \
             --disable-txtpages \
             --disable-htmlpages \
-            --extra-cflags="-I/mingw64/include" \
-            --extra-ldflags="-L/mingw64/lib -lpthread" \
+            --extra-cflags="-I/ucrt64/include" \
+            --extra-ldflags="-L/ucrt64/lib -lpthread" \
             --disable-everything \
             --enable-avcodec \
             --enable-avformat \
@@ -104,7 +104,8 @@ jobs:
         run: |
           cd $(cygpath -u "${{ github.workspace }}/ffplay-output/bin")
           strip ffplay.exe
-          ldd ffplay.exe | grep -E "(/mingw64/bin/.*\.dll)" | awk '{print $3}' | xargs -I {} cp {} .
+          # UCRT64 环境下 DLL 位于 /ucrt64/bin
+          ldd ffplay.exe | grep -E "(/ucrt64/bin/.*\.dll)" | awk '{print $3}' | xargs -I {} cp {} .
           ls -lh ffplay.exe
 
       - name: 生成版本信息 version.txt
@@ -117,7 +118,7 @@ jobs:
           OUT_DIR=$(cygpath -u "${{ github.workspace }}/ffplay-output/bin")
 
           printf '%s\n' \
-            "ffplay 精简版 (LGPL)" \
+            "ffplay 精简版 (LGPL) - UCRT64" \
             "========================================" \
             "FFmpeg 版本 : ${FFMPEG_VER}" \
             "构建时间    : ${BUILD_DATE}" \
@@ -131,6 +132,7 @@ jobs:
             "  - 容器格式 : MOV, MP4, MKV, FLV, AVI" \
             "  - 额外特性 : 循环播放支持" \
             "许可证      : LGPL（已禁用 GPL 代码）" \
+            "运行时      : UCRT (Windows 10+)" \
             "========================================" \
             > "$OUT_DIR/version.txt"
 
@@ -156,9 +158,10 @@ jobs:
           tag_name: ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', github.run_number) }}
           name: Release ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', github.run_number) }}
           body: |
-            自动构建的 ffplay 精简版 (LGPL)
+            自动构建的 ffplay 精简版 (LGPL, UCRT64)
             - 包含功能：视频解码 (H.264/HEVC/VP8/VP9/MPEG-4) + 音频解码 (AAC/MP3/AC3) + 循环播放支持
             - 许可证：LGPL（完全禁用 GPL 代码）
+            - 运行时：UCRT (Windows 10 及以上)
             - 体积：约 5-8 MB（包含所有依赖DLL）
             - 使用说明：解压后直接运行 ffplay.exe，无需额外安装
             - 详细版本信息见压缩包内的 version.txt
