@@ -137,15 +137,26 @@ jobs:
         shell: msys2 {0}
         run: |
           set -Eeuo pipefail
-          cd ffmpeg || true
-          FFMPEG_VER=$(grep '^FFMPEG_VERSION=' ffbuild/config.mak 2>/dev/null | cut -d'=' -f2-)
+      
+          if [ ! -d ffmpeg ]; then
+            echo "::error::ffmpeg 目录不存在，前面的 clone/配置阶段失败了"
+            exit 1
+          fi
+      
+          cd ffmpeg
+      
+          if [ -f ffbuild/config.mak ]; then
+            FFMPEG_VER=$(grep '^FFMPEG_VERSION=' ffbuild/config.mak 2>/dev/null | cut -d'=' -f2- || true)
+          else
+            FFMPEG_VER="unknown"
+          fi
+      
           [ -z "$FFMPEG_VER" ] && FFMPEG_VER="unknown"
+      
           BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
           OUT_DIR=$(cygpath -u "$GITHUB_WORKSPACE")/ffplay-output/bin
           mkdir -p "$OUT_DIR"
-          echo "OUT_DIR = $OUT_DIR"
-          ls -ld "$OUT_DIR"
-
+      
           printf '%s\n' \
             "ffplay 精简版 (LGPL) - UCRT64" \
             "========================================" \
@@ -155,16 +166,8 @@ jobs:
             "Commit SHA  : ${{ github.sha }}" \
             "工作流运行  : ${{ github.run_id }} / 第 ${{ github.run_number }} 次" \
             "========================================" \
-            "包含功能:" \
-            "  - 视频解码 : H.264, HEVC, VP8, VP9, MPEG-4" \
-            "  - 音频解码 : AAC, MP3, AC3, EAC3" \
-            "  - 容器格式 : MOV, MP4, MKV, FLV, AVI" \
-            "  - 额外特性 : 循环播放支持" \
-            "许可证      : LGPL（已禁用 GPL 代码）" \
-            "运行时      : UCRT (Windows 10+)" \
-            "========================================" \
             > "$OUT_DIR/version.txt"
-
+      
           echo "===== version.txt 内容 ====="
           cat "$OUT_DIR/version.txt"
 
