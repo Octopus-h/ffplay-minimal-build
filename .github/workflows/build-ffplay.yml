@@ -26,8 +26,6 @@ jobs:
         with:
           msystem: UCRT64
           update: true
-          # 说明：yasm 在 UCRT64 仓库中已移除，nasm 足以完成 FFmpeg 汇编检测；
-          # git 使用 UCRT64 专用包，避免通用 git 在 UCRT64 下 clone 失败。
           install: >-
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-make
@@ -39,17 +37,31 @@ jobs:
             base-devel
             mingw-w64-ucrt-x86_64-binutils
 
+      - name: 清理旧产物目录
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf "${GITHUB_WORKSPACE}/ffplay-output"
+          echo "已清理旧的 ffplay-output 目录"
+
       - name: 下载 FFmpeg 源码
         shell: msys2 {0}
         run: |
+          set -Eeuo pipefail
           git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git ffmpeg
+          if [ ! -d ffmpeg/.git ]; then
+            echo "::error::FFmpeg 源码克隆失败，目录不存在"
+            exit 1
+          fi
           cd ffmpeg
+          echo "FFmpeg 源码已下载"
 
       - name: 配置编译选项 (UCRT64 路径)
         id: configure
         shell: msys2 {0}
         continue-on-error: true
         run: |
+          set -Eeuo pipefail
           cd ffmpeg
           export PKG_CONFIG_PATH=/ucrt64/lib/pkgconfig
           prefix=$(cygpath -u "${{ github.workspace }}/ffplay-output")
@@ -90,20 +102,33 @@ jobs:
 
       - name: 如果配置失败，终止工作流
         if: steps.configure.outcome == 'failure'
-        run: exit 1
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "::error::FFmpeg configure 失败，详细日志已上传为 artifact"
+          exit 1
 
       - name: 编译 ffplay
         id: compile_step
         shell: msys2 {0}
         run: |
+          set -Eeuo pipefail
           cd ffmpeg
-          make -j2 ffplay.exe
+          JOB_COUNT=$(nproc 2>/dev/null || echo 2)
+          echo "使用并发数: ${JOB_COUNT}"
+          make -j"${JOB_COUNT}" ffplay.exe
           make install
 
       - name: 收集依赖 DLL + 减小体积
         shell: msys2 {0}
         run: |
-          cd $(cygpath -u "${{ github.workspace }}/ffplay-output/bin")
+          set -Eeuo pipefail
+          cd "$(cygpath -u "${{ github.workspace }}/ffplay-output/bin")"
+          if [ ! -f ffplay.exe ]; then
+            echo "::error::ffplay.exe 未生成，编译可能失败"
+            ls -la
+            exit 1
+          fi
           strip ffplay.exe
           ldd ffplay.exe | grep -E "(/ucrt64/bin/.*\.dll)" | awk '{print $3}' | xargs -I {} cp {} .
           ls -lh ffplay.exe
@@ -111,6 +136,7 @@ jobs:
       - name: 生成版本信息 version.txt
         shell: msys2 {0}
         run: |
+          set -Eeuo pipefail
           cd ffmpeg || true
           FFMPEG_VER=$(grep '^FFMPEG_VERSION=' ffbuild/config.mak 2>/dev/null | cut -d'=' -f2-)
           [ -z "$FFMPEG_VER" ] && FFMPEG_VER="unknown"
@@ -145,8 +171,26 @@ jobs:
       - name: 打包产物为ZIP
         shell: pwsh
         run: |
-          cd ${{ github.workspace }}/ffplay-output/bin
-          Compress-Archive -Path .\* -DestinationPath ..\ffplay-lgpl-minimal-windows.zip
+          $binPath = "${{ github.workspace }}\ffplay-output\bin"
+          $zipPath = "${{ github.workspace }}\ffplay-output\ffplay-lgpl-minimal-windows.zip"
+          if (-not (Test-Path $binPath)) {
+            throw "::error::目标目录不存在: $binPath"
+          }
+          if (-not (Get-ChildItem -Path $binPath -ErrorAction Stop)) {
+            throw "::error::打包目录为空: $binPath"
+          }
+          Compress-Archive -Path "$binPath\*" -DestinationPath $zipPath -Force
+
+      - name: 检查发布包是否存在
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          zip_file="${GITHUB_WORKSPACE}/ffplay-output/ffplay-lgpl-minimal-windows.zip"
+          ls -l "$zip_file"
+          if [ ! -f "$zip_file" ]; then
+            echo "::error::发布 ZIP 未生成: ${zip_file}"
+            exit 1
+          fi
 
       - name: 上传编译产物 (Artifact)
         uses: actions/upload-artifact@v4
@@ -154,12 +198,27 @@ jobs:
           name: ffplay-lgpl-minimal
           path: ${{ github.workspace }}/ffplay-output/ffplay-lgpl-minimal-windows.zip
 
+      - name: 计算发布标签
+        id: release_tag
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.release_tag }}" ]]; then
+            tag="${{ github.event.inputs.release_tag }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            tag="${GITHUB_REF_NAME}"
+          else
+            tag="build-${GITHUB_RUN_NUMBER}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "使用标签: ${tag}"
+
       - name: 创建 Release 并上传附件
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', github.run_number) }}
-          name: Release ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', github.run_number) }}
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          name: Release ${{ steps.release_tag.outputs.tag }}
           body: |
             自动构建的 ffplay 精简版 (LGPL, UCRT64)
             - 包含功能：视频解码 (H.264/HEVC/VP8/VP9/MPEG-4) + 音频解码 (AAC/MP3/AC3) + 循环播放支持
