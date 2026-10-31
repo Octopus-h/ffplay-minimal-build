@@ -53,7 +53,6 @@ jobs:
             echo "::error::FFmpeg 源码克隆失败，目录不存在"
             exit 1
           fi
-          cd ffmpeg
           echo "FFmpeg 源码已下载"
 
       - name: 配置编译选项 (UCRT64 路径)
@@ -137,26 +136,31 @@ jobs:
         shell: msys2 {0}
         run: |
           set -Eeuo pipefail
-      
+
           if [ ! -d ffmpeg ]; then
             echo "::error::ffmpeg 目录不存在，前面的 clone/配置阶段失败了"
             exit 1
           fi
-      
+
           cd ffmpeg
-      
+
+          FFMPEG_VER=""
           if [ -f ffbuild/config.mak ]; then
             FFMPEG_VER=$(grep '^FFMPEG_VERSION=' ffbuild/config.mak 2>/dev/null | cut -d'=' -f2- || true)
-          else
-            FFMPEG_VER="unknown"
           fi
-      
-          [ -z "$FFMPEG_VER" ] && FFMPEG_VER="unknown"
-      
+
+          if [ -z "$FFMPEG_VER" ]; then
+            if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+              FFMPEG_VER=$(git describe --tags --always --dirty 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "source-build")
+            fi
+          fi
+
+          [ -z "$FFMPEG_VER" ] && FFMPEG_VER="source-build"
+
           BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
           OUT_DIR=$(cygpath -u "$GITHUB_WORKSPACE")/ffplay-output/bin
           mkdir -p "$OUT_DIR"
-      
+
           printf '%s\n' \
             "ffplay 精简版 (LGPL) - UCRT64" \
             "========================================" \
@@ -167,7 +171,7 @@ jobs:
             "工作流运行  : ${{ github.run_id }} / 第 ${{ github.run_number }} 次" \
             "========================================" \
             > "$OUT_DIR/version.txt"
-      
+
           echo "===== version.txt 内容 ====="
           cat "$OUT_DIR/version.txt"
 
@@ -176,12 +180,15 @@ jobs:
         run: |
           $binPath = "${{ github.workspace }}\ffplay-output\bin"
           $zipPath = "${{ github.workspace }}\ffplay-output\ffplay-lgpl-minimal-windows.zip"
+
           if (-not (Test-Path $binPath)) {
             throw "::error::目标目录不存在: $binPath"
           }
+
           if (-not (Get-ChildItem -Path $binPath -ErrorAction Stop)) {
             throw "::error::打包目录为空: $binPath"
           }
+
           Compress-Archive -Path "$binPath\*" -DestinationPath $zipPath -Force
 
       - name: 检查发布包是否存在
@@ -189,7 +196,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           zip_file="${GITHUB_WORKSPACE}/ffplay-output/ffplay-lgpl-minimal-windows.zip"
-          ls -l "$zip_file"
+          ls -lh "$zip_file"
           if [ ! -f "$zip_file" ]; then
             echo "::error::发布 ZIP 未生成: ${zip_file}"
             exit 1
@@ -233,3 +240,12 @@ jobs:
           files: ${{ github.workspace }}/ffplay-output/ffplay-lgpl-minimal-windows.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 发布失败说明
+        if: failure() && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
+        shell: bash
+        run: |
+          echo "::error::Release 创建失败。请检查："
+          echo "  1. tag 是否已存在"
+          echo "  2. GITHUB_TOKEN 是否有 contents: write 权限"
+          echo "  3. 压缩包是否成功生成并位于 ffplay-output/ffplay-lgpl-minimal-windows.zip"
